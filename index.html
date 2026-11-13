@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Key drop: CompCam</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 17px/1.45 -apple-system, system-ui, sans-serif; margin: 0; padding: 24px 20px 48px; max-width: 560px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { margin: 8px 0; }
+  .muted { opacity: .7; font-size: 15px; }
+  label.pick { display: block; margin: 20px 0 8px; padding: 16px; border: 2px dashed #888; border-radius: 12px; text-align: center; font-weight: 600; }
+  input[type=file] { display: none; }
+  details { margin-top: 10px; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 120px; font: 13px ui-monospace, monospace; border-radius: 8px; padding: 8px; }
+  button { font: inherit; font-weight: 600; padding: 12px 18px; border-radius: 10px; border: 0; background: #0a84ff; color: #fff; margin-top: 10px; }
+  #out { display: none; margin-top: 20px; }
+  #out textarea { min-height: 150px; }
+  .ok { color: #2a9d4b; font-weight: 600; }
+  .err { color: #d33; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Send the App Store Connect key safely</h1>
+<p>Pick the <b>AuthKey_….p8</b> file. This page locks it on your phone with GitHub's public key for the <b>moltstrong/compcam</b> repo. Only GitHub can unlock it, so the locked text is safe to paste into iMessage.</p>
+<p class="muted">Nothing is uploaded. The file never leaves this page unlocked. The page holds only GitHub's public key (id <span id="kid"></span>), and the code can be read with View Source.</p>
+
+<label class="pick" for="f">Choose the .p8 file</label>
+<input id="f" type="file" accept=".p8,application/octet-stream,text/plain,*/*">
+
+<details>
+  <summary class="muted">Or paste the key text instead</summary>
+  <textarea id="t" placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----"></textarea>
+  <button id="go" type="button">Lock pasted text</button>
+</details>
+
+<p id="msg"></p>
+<div id="out">
+  <p class="ok">Locked. Copy this and paste it into iMessage to Moltstrong:</p>
+  <textarea id="cipher" readonly></textarea>
+  <button id="copy" type="button">Copy</button>
+  <p class="muted">Afterwards you can delete the .p8 from Files.</p>
+</div>
+
+<script type="module">
+import sodium from "./sodium.js";
+const KEY_ID = "3380204578043523366";
+const PUBLIC_KEY_B64 = "rZ/ohdmTmbtUaFkLY6q2FWsJKDlB6zZribhjhpwiWGA=";
+document.getElementById("kid").textContent = KEY_ID;
+const msg = document.getElementById("msg");
+const fail = (t) => { msg.className = "err"; msg.textContent = t; };
+
+async function lock(text) {
+  msg.textContent = ""; msg.className = "";
+  const clean = text.replace(/\r\n/g, "\n").trim() + "\n";
+  if (!/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(clean)) {
+    fail("That doesn't look like an App Store Connect key. It should be the AuthKey_….p8 file, starting with BEGIN PRIVATE KEY.");
+    return;
+  }
+  await sodium.ready;
+  const pk = sodium.from_base64(PUBLIC_KEY_B64, sodium.base64_variants.ORIGINAL);
+  const sealed = sodium.crypto_box_seal(sodium.from_string(clean), pk);
+  const b64 = sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL);
+  document.getElementById("cipher").value = "KEYDROP " + KEY_ID + " " + b64;
+  document.getElementById("out").style.display = "block";
+  document.getElementById("t").value = "";
+}
+
+document.getElementById("f").addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (file.size > 10000) { fail("That file is too big to be a .p8 key."); return; }
+  try { await lock(await file.text()); } catch (err) { fail("Couldn't read the file: " + err); }
+  e.target.value = "";
+});
+document.getElementById("go").addEventListener("click", () => lock(document.getElementById("t").value).catch(err => fail(String(err))));
+document.getElementById("copy").addEventListener("click", async () => {
+  const c = document.getElementById("cipher");
+  try { await navigator.clipboard.writeText(c.value); document.getElementById("copy").textContent = "Copied"; }
+  catch { c.select(); document.execCommand("copy"); document.getElementById("copy").textContent = "Copied"; }
+});
+</script>
+</body>
+</html>
