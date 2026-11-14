@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Key drop: send a key to Moltstrong</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 17px/1.45 -apple-system, system-ui, sans-serif; margin: 0; padding: 24px 20px 48px; max-width: 560px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { margin: 8px 0; }
+  .muted { opacity: .7; font-size: 15px; }
+  label { display: block; margin: 18px 0 6px; font-weight: 600; }
+  select, input[type=text] { font: inherit; width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #888; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 110px; font: 14px ui-monospace, monospace; border-radius: 8px; padding: 8px; }
+  button { font: inherit; font-weight: 600; padding: 12px 18px; border-radius: 10px; border: 0; background: #0a84ff; color: #fff; margin-top: 12px; }
+  #out { display: none; margin-top: 20px; }
+  #out textarea { min-height: 150px; }
+  .ok { color: #2a9d4b; font-weight: 600; }
+  .err { color: #d33; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Send a key to Moltstrong safely</h1>
+<p>Paste an API key below. This page locks it on your phone with a public key whose only unlocking half sits on Moltstrong's Mac. The locked text is safe to paste into iMessage.</p>
+<p class="muted">Nothing is uploaded, and the key never leaves this page unlocked. You can read the code with View Source. Public key id: <span id="kid"></span></p>
+
+<label for="kind">What is it?</label>
+<select id="kind">
+  <option value="openrouter">OpenRouter API key (starts with sk-or-)</option>
+  <option value="other">Something else</option>
+</select>
+<input id="name" type="text" placeholder="Short name, e.g. modal" style="display:none;margin-top:8px" autocomplete="off" autocapitalize="off" spellcheck="false">
+
+<label for="t">The key</label>
+<textarea id="t" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the key here"></textarea>
+<button id="go" type="button">Lock it</button>
+
+<p id="msg"></p>
+<div id="out">
+  <p class="ok">Locked. Copy this and paste it into iMessage to Moltstrong:</p>
+  <textarea id="cipher" readonly></textarea>
+  <button id="copy" type="button">Copy</button>
+</div>
+
+<script type="module">
+import sodium from "./sodium.js";
+const PUBLIC_KEY_B64 = "9Sq3ubKg9OvInI0ryQK3GjKO3pmJv1d7ZVoozsXbYS4=";
+const KID = PUBLIC_KEY_B64.slice(0, 8);
+document.getElementById("kid").textContent = KID;
+const msg = document.getElementById("msg");
+const fail = (t) => { msg.className = "err"; msg.textContent = t; };
+const kind = document.getElementById("kind"), nameEl = document.getElementById("name");
+kind.addEventListener("change", () => { nameEl.style.display = kind.value === "other" ? "block" : "none"; });
+
+async function lock() {
+  msg.textContent = ""; msg.className = "";
+  const text = document.getElementById("t").value.trim();
+  if (!text) { fail("Paste the key first."); return; }
+  let label = kind.value;
+  if (label === "openrouter" && !/^sk-or-[A-Za-z0-9_-]{20,}$/.test(text)) {
+    fail("That doesn't look like an OpenRouter key. It should start with sk-or- and have no spaces.");
+    return;
+  }
+  if (label === "other") {
+    label = (nameEl.value || "other").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24) || "other";
+  }
+  if (text.length > 4000) { fail("That's too long to be a key."); return; }
+  await sodium.ready;
+  const pk = sodium.from_base64(PUBLIC_KEY_B64, sodium.base64_variants.ORIGINAL);
+  const sealed = sodium.crypto_box_seal(sodium.from_string(text), pk);
+  const b64 = sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL);
+  document.getElementById("cipher").value = "KEYDROP2 " + KID + " " + label + " " + b64;
+  document.getElementById("out").style.display = "block";
+  document.getElementById("t").value = "";
+}
+document.getElementById("go").addEventListener("click", () => lock().catch(err => fail(String(err))));
+document.getElementById("copy").addEventListener("click", async () => {
+  const c = document.getElementById("cipher");
+  try { await navigator.clipboard.writeText(c.value); document.getElementById("copy").textContent = "Copied"; }
+  catch { c.select(); document.execCommand("copy"); document.getElementById("copy").textContent = "Copied"; }
+});
+</script>
+</body>
+</html>
